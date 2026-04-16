@@ -1,0 +1,7 @@
+anthropic
+chromadb
+sentence-transformers
+pdfplumber
+tavily-python
+pandas
+python-dotenv
