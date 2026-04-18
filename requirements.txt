@@ -5,3 +5,6 @@ pdfplumber
 tavily-python
 pandas
 python-dotenv
+chromadb
+sentence-transformers
+pdfplumber
