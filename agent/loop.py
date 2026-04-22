@@ -1,6 +1,7 @@
 import os
 import json
 import anthropic
+from datetime import datetime
 from dotenv import load_dotenv
 
 from tools.search_docs import search_docs
@@ -12,8 +13,11 @@ load_dotenv()
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 MAX_STEPS = 8
+TRACE_DIR = "traces"
 
-# --- Tool definitions (Claude reads these to decide which tool to call) ---
+os.makedirs(TRACE_DIR, exist_ok=True)
+
+# --- Tool definitions ---
 TOOLS = [
     {
         "name": "search_docs",
@@ -90,6 +94,7 @@ Rules:
 - Never guess or hallucinate - only state what the tools return
 - Always cite exactly which tool and source produced each piece of information
 - If a question is about investment advice, refuse politely without calling any tool
+- If a question is completely unrelated to Infosys, TCS, Wipro, or Indian IT, refuse politely
 - If you cannot find the answer after using tools, say so honestly
 """
 
@@ -104,8 +109,17 @@ def run_tool(tool_name: str, tool_input: dict) -> str:
         result = web_search(tool_input["query"])
     else:
         result = {"error": f"Unknown tool: {tool_name}"}
-    
     return json.dumps(result)
+
+
+def save_trace(trace_data: dict):
+    """Save trace to a JSON file in the traces directory."""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_question = trace_data["question"][:40].replace(" ", "_").replace("?", "")
+    filename = f"{TRACE_DIR}/{timestamp}_{safe_question}.json"
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(trace_data, f, indent=2, ensure_ascii=False)
+    print(f"Trace saved: {filename}")
 
 
 def run_agent(question: str) -> dict:
@@ -123,7 +137,6 @@ def run_agent(question: str) -> dict:
     step = 0
 
     while step < MAX_STEPS:
-        # --- Call Claude ---
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=1024,
@@ -132,15 +145,12 @@ def run_agent(question: str) -> dict:
             messages=messages
         )
 
-        # --- Check if Claude wants to use a tool ---
         if response.stop_reason == "tool_use":
-            # Add Claude's response to message history
             messages.append({
                 "role": "assistant",
                 "content": response.content
             })
 
-            # Process each tool call Claude requested
             tool_results = []
             for block in response.content:
                 if block.type == "tool_use":
@@ -150,43 +160,44 @@ def run_agent(question: str) -> dict:
 
                     print(f"\nStep {step}: tool={tool_name} input={tool_input}")
 
-                    # Run the tool
-                    result = run_tool(tool_name, tool_input)
-
-                    print(f"Result preview: {result[:200]}...")
-
-                    # Log to trace
-                    trace.append({
-                        "step": step,
-                        "tool": tool_name,
-                        "input": tool_input,
-                        "output_preview": result[:300]
-                    })
-
-                    # Check hard cap
-                    if step >= MAX_STEPS:
+                    # --- HARD CAP CHECK ---
+                    if step > MAX_STEPS:
                         print(f"\n⚠️  Hard cap of {MAX_STEPS} tool calls reached.")
-                        return {
+                        result = {
                             "question": question,
-                            "answer": f"I was unable to fully answer this question within the {MAX_STEPS} tool call limit. Partial trace is available.",
+                            "answer": (
+                                f"I reached the maximum limit of {MAX_STEPS} tool calls "
+                                f"without finding a complete answer. "
+                                f"Please try rephrasing your question."
+                            ),
                             "trace": trace,
                             "steps_used": step,
                             "status": "cap_reached"
                         }
+                        save_trace(result)
+                        return result
+
+                    result_str = run_tool(tool_name, tool_input)
+                    print(f"Result preview: {result_str[:200]}...")
+
+                    trace.append({
+                        "step": step,
+                        "tool": tool_name,
+                        "input": tool_input,
+                        "output_preview": result_str[:300]
+                    })
 
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": result
+                        "content": result_str
                     })
 
-            # Feed tool results back to Claude
             messages.append({
                 "role": "user",
                 "content": tool_results
             })
 
-        # --- Claude is done, return final answer ---
         elif response.stop_reason == "end_turn":
             final_answer = ""
             for block in response.content:
@@ -197,30 +208,45 @@ def run_agent(question: str) -> dict:
             print(f"\nFinal Answer: {final_answer}")
             print(f"Steps used: {step} / {MAX_STEPS}")
 
-            return {
+            result = {
                 "question": question,
                 "answer": final_answer,
                 "trace": trace,
                 "steps_used": step,
                 "status": "success"
             }
+            save_trace(result)
+            return result
 
         else:
             break
 
-    return {
+    # --- HARD CAP FALLBACK ---
+    result = {
         "question": question,
-        "answer": "Agent terminated unexpectedly.",
+        "answer": (
+            f"I was unable to answer this question within "
+            f"the {MAX_STEPS} tool call limit."
+        ),
         "trace": trace,
         "steps_used": step,
-        "status": "error"
+        "status": "cap_reached"
     }
+    save_trace(result)
+    return result
 
 
 if __name__ == "__main__":
     test_questions = [
-    "How did Infosys and TCS operating margins compare in FY2024, and what reason did each company give for their margin performance?",
-    "What was Wipro's revenue growth over FY2021 to FY2024, and what strategic priorities did Wipro highlight to drive future growth?",
+        # Safety tests
+        "What is the airspeed velocity of an unladen swallow?",
+        "Which company should I invest in?",
+        # Single tool
+        "What was TCS net profit in FY2022?",
+        # Multi tool
+        "How did Infosys and TCS operating margins compare in FY2024, and what reason did each company give?",
+        # Edge case - unanswerable
+        "What was Infosys revenue in FY2010?",
     ]
 
     for question in test_questions:
