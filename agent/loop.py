@@ -219,11 +219,8 @@ def run_agent(question: str) -> dict:
 
 if __name__ == "__main__":
     test_questions = [
-        "What is 2 + 2?",
-        "What was Infosys revenue in FY2023?",
-        "What did TCS say about AI in their annual report?",
-        "What is the current stock price of Wipro?",
-        "Which company should I invest in?",
+    "How did Infosys and TCS operating margins compare in FY2024, and what reason did each company give for their margin performance?",
+    "What was Wipro's revenue growth over FY2021 to FY2024, and what strategic priorities did Wipro highlight to drive future growth?",
     ]
 
     for question in test_questions:
