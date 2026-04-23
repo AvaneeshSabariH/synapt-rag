@@ -69,6 +69,13 @@ behaviour — the cap fired as designed.
 more than 3 times in a row with no different result, compose a
 partial answer from what was retrieved rather than retrying.
 
+**Fix implemented:** Added a consecutive-same-tool fallback. If the same tool is called 3 or more times in a row, the agent stops retrying and composes the best possible answer from accumulated results, noting honestly what is missing.
+
+**Result after fix:** Agent stopped at 3 steps, returned a partial
+but honest answer covering the ERM framework and data privacy risks,
+and clearly told the user what it could not retrieve.
+Status changed from cap_reached to fallback_composed.
+
 ---
 
 ### Failure 2 — Incomplete citation for Infosys margin explanation (Q11)
