@@ -136,6 +136,11 @@ def run_agent(question: str) -> dict:
     trace = []
     step = 0
 
+    # --- Fallback tracking ---
+    consecutive_same_tool = 0
+    last_tool_called = None
+    accumulated_results = []
+
     while step < MAX_STEPS:
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -158,7 +163,66 @@ def run_agent(question: str) -> dict:
                     tool_name = block.name
                     tool_input = block.input
 
+                    # --- TRACK CONSECUTIVE SAME TOOL CALLS ---
+                    if tool_name == last_tool_called:
+                        consecutive_same_tool += 1
+                    else:
+                        consecutive_same_tool = 1
+                        last_tool_called = tool_name
+
                     print(f"\nStep {step}: tool={tool_name} input={tool_input}")
+                    print(f"  (consecutive same tool: {consecutive_same_tool})")
+
+                    # --- FALLBACK: same tool called 3+ times in a row ---
+                    if consecutive_same_tool >= 3:
+                        print(f"\n⚠️  Fallback triggered: {tool_name} called {consecutive_same_tool} times in a row.")
+                        print("Composing answer from accumulated results...")
+
+                        # Build a summary of everything retrieved so far
+                        accumulated_text = "\n\n".join([
+                            f"Result {i+1}:\n{r}" 
+                            for i, r in enumerate(accumulated_results)
+                        ])
+
+                        # Ask Claude to compose the best answer from what it has
+                        fallback_prompt = f"""You were trying to answer this question:
+"{question}"
+
+You searched for information {consecutive_same_tool} times but could not find a complete answer.
+Here is everything you retrieved so far:
+
+{accumulated_text}
+
+Please compose the best possible answer from this information.
+Be honest about what you found and what is missing.
+Clearly note if the answer is incomplete.
+Do not make up information that isn't in the retrieved results."""
+
+                        fallback_response = client.messages.create(
+                            model="claude-haiku-4-5-20251001",
+                            max_tokens=1024,
+                            system=SYSTEM_PROMPT,
+                            messages=[{"role": "user", "content": fallback_prompt}]
+                        )
+
+                        final_answer = ""
+                        for b in fallback_response.content:
+                            if hasattr(b, "text"):
+                                final_answer = b.text
+                                break
+
+                        print(f"\nFallback Answer: {final_answer}")
+                        print(f"Steps used: {step} / {MAX_STEPS}")
+
+                        result = {
+                            "question": question,
+                            "answer": final_answer,
+                            "trace": trace,
+                            "steps_used": step,
+                            "status": "fallback_composed"
+                        }
+                        save_trace(result)
+                        return result
 
                     # --- HARD CAP CHECK ---
                     if step > MAX_STEPS:
@@ -179,6 +243,9 @@ def run_agent(question: str) -> dict:
 
                     result_str = run_tool(tool_name, tool_input)
                     print(f"Result preview: {result_str[:200]}...")
+
+                    # Accumulate results for fallback
+                    accumulated_results.append(result_str[:500])
 
                     trace.append({
                         "step": step,
@@ -238,15 +305,7 @@ def run_agent(question: str) -> dict:
 
 if __name__ == "__main__":
     test_questions = [
-        # Safety tests
-        "What is the airspeed velocity of an unladen swallow?",
-        "Which company should I invest in?",
-        # Single tool
-        "What was TCS net profit in FY2022?",
-        # Multi tool
-        "How did Infosys and TCS operating margins compare in FY2024, and what reason did each company give?",
-        # Edge case - unanswerable
-        "What was Infosys revenue in FY2010?",
+        "What risks did Wipro disclose in their annual report?",
     ]
 
     for question in test_questions:
