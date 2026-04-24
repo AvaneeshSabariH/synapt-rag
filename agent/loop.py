@@ -20,24 +20,36 @@ os.makedirs(TRACE_DIR, exist_ok=True)
 # --- Tool definitions ---
 TOOLS = [
     {
-        "name": "search_docs",
-        "description": (
-            "Performs semantic search over annual report PDFs for Infosys, TCS, and Wipro. "
-            "Use this tool when the question asks about qualitative information such as "
-            "management commentary, strategic priorities, reasons behind performance, "
-            "risk factors, or any narrative explanation found in annual reports. "
-            "Do NOT use this for specific numbers, live prices, or recent news."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Natural language search query"
-                }
+    "name": "search_docs",
+    "description": (
+        "Performs semantic search over annual report PDFs for Infosys, TCS, and Wipro. "
+        "Use this tool when the question asks about qualitative information such as "
+        "management commentary, strategic priorities, reasons behind performance, "
+        "risk factors, or any narrative explanation found in annual reports. "
+        "Do NOT use this for specific numbers, live prices, or recent news. "
+        "Use the company and fiscal_year filters when the question targets a specific "
+        "company or year to improve retrieval precision."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Natural language search query"
             },
-            "required": ["query"]
-        }
+            "company": {
+                "type": "string",
+                "enum": ["Infosys", "TCS", "Wipro"],
+                "description": "Filter results to a specific company"
+            },
+            "fiscal_year": {
+                "type": "string",
+                "enum": ["FY2021", "FY2022", "FY2023", "FY2024", "FY2025"],
+                "description": "Filter results to a specific fiscal year"
+            }
+        },
+        "required": ["query"]
+    }
     },
     {
         "name": "query_data",
@@ -102,7 +114,11 @@ Rules:
 def run_tool(tool_name: str, tool_input: dict) -> str:
     """Run the appropriate tool and return result as a string."""
     if tool_name == "search_docs":
-        result = search_docs(tool_input["query"])
+        result = search_docs(
+            tool_input["query"],
+            company=tool_input.get("company"),
+            fiscal_year=tool_input.get("fiscal_year")
+        )
     elif tool_name == "query_data":
         result = query_data(tool_input["question"])
     elif tool_name == "web_search":
@@ -175,7 +191,7 @@ def run_agent(question: str) -> dict:
 
                     # --- FALLBACK: same tool called 3+ times in a row ---
                     if consecutive_same_tool >= 3:
-                        print(f"\n⚠️  Fallback triggered: {tool_name} called {consecutive_same_tool} times in a row.")
+                        print(f"\n! Fallback triggered: {tool_name} called {consecutive_same_tool} times in a row.")
                         print("Composing answer from accumulated results...")
 
                         # Build a summary of everything retrieved so far
@@ -226,7 +242,7 @@ Do not make up information that isn't in the retrieved results."""
 
                     # --- HARD CAP CHECK ---
                     if step > MAX_STEPS:
-                        print(f"\n⚠️  Hard cap of {MAX_STEPS} tool calls reached.")
+                        print(f"\n! Hard cap of {MAX_STEPS} tool calls reached.")
                         result = {
                             "question": question,
                             "answer": (
