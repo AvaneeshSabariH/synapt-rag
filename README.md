@@ -124,6 +124,15 @@ py -m evaluation.run_eval
 
 ---
 
+## Demo
+
+Screen recording showing a single-tool query, a multi-tool trace,
+and a graceful refusal.
+
+[Watch demo on YouTube](https://youtu.be/ZLqaTym_ruw)
+
+---
+
 ## Known Failure Modes
 
 **Search loops on broad qualitative questions** — fixed with a
