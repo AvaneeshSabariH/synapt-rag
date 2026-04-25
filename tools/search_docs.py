@@ -29,7 +29,7 @@ def extract_fiscal_year(filename: str) -> str:
       wipro-integrated-annual-report-2022-23.pdf -> FY2023
     """
     # Match patterns like 2024-2025 or 2024-25
-    match = re.search(r'20(\d{2})[-_]20?(\d{2})', filename)
+    match = re.search(r'20(\d{2})[-_](?:20)?(\d{2})', filename)
     if match:
         end_year = match.group(2)
         if len(end_year) == 2:

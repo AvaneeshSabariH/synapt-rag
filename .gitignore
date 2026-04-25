@@ -10,6 +10,7 @@ __pycache__/
 # Data files (PDFs are large, don't commit them)
 data/raw/
 data/processed/*.db
+data/processed/chroma_db/
 
 # OS files
 .DS_Store
@@ -21,3 +22,6 @@ Thumbs.db
 
 # Trace logs
 traces/
+
+# Evaluation results
+evaluation/eval_results_*.json
